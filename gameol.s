@@ -17,6 +17,14 @@ screenPointerTopLeftNeighbour:
     .res 2
 dataPointer:
     .res 2
+firstRow:
+    .res 1
+lastRow:
+    .res 1
+firstColumn:
+    .res 1
+lastColumn:
+    .res 1
 
 .segment "CODE"
     jsr $e544 ; clear screen
@@ -85,7 +93,32 @@ cycle:
 @lineloop:
     ldy #0
 
+    lda #0
+    sta firstRow
+    sta lastRow
+    lda #1
+    cpx 0
+    bne @checkLastRow
+    sta firstRow
+@checkLastRow:
+    cpx #YSIZE-1
+    bne @columnloop
+    sta lastRow
+
 @columnloop:
+    lda #0
+    sta firstColumn
+    sta lastColumn
+    lda #1
+    cpy 0
+    bne @checkLastColumn
+    sta firstColumn
+@checkLastColumn:
+    cpy #XSIZE-1
+    bne @continue
+    sta lastColumn
+
+@continue:
     jsr countNeighbors
     
     clc                 ; Clear carry flag
@@ -119,7 +152,7 @@ cycle:
     inx
     cpx #YSIZE
     bne @lineloop
-    
+
     jmp wozmon
 
 countNeighbors:
