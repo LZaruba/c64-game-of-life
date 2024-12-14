@@ -1,5 +1,6 @@
 *.prg
 *.o
 *.map
+*.lbl
 
 .vscode/

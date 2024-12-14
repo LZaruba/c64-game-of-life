@@ -33,8 +33,13 @@ The Game of Life, also known as Conway's Game of Life or simply Life, is a cellu
     a. The 0b1000000 bit can be used to figure out if the cell is live or not and the rest of the bits for count of neighbours.
 4. Resulting state is written into the screen memory.
 
+## Breakpoints
+
+The [breakpoints] file contains names of labels that VICE will break on and open monitor when running via `make debug`. The file needs to be terminated by an empty line.
+
 ## Resources
 
 [https://www.pagetable.com/c64ref/kernal/](C64 Kernal Reference)
 [https://cc65.github.io/doc/](CC65 Docs)
 [http://www.6502.org/users/obelisk/6502/reference.html](6502 Instruction Set)
+[https://vice-emu.sourceforge.io/vice_11.html](VICE Monitor Manual)

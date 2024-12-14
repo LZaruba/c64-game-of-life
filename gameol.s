@@ -89,6 +89,8 @@ cycle:
     sbc #0  ; subtracting 0 and carry
     sta screenPointerTopLeftNeighbour+1
 
+; X - line counter
+; Y - column counter
     ldx #0
 @lineloop:
     ldy #0
@@ -171,57 +173,25 @@ countNeighbors:
     ora (dataPointer), y
     sta (dataPointer), y
 
+
 @skipLiveSymbol:
-    ; check top neigbour
-    ldy #1 ; -41 + 1 = top
-    lda (screenPointerTopLeftNeighbour), y
-    cmp #LIVE_SYMBOL
-    bne @checkRightNeighbour
-    ldy #0
-    lda (dataPointer), y
-    clc
-    adc #1
-    sta (dataPointer), y
-
-@checkRightNeighbour:
-    ; check right neighbour
-    ldy #82 ; -41 + 82 = right
-    lda (screenPointerTopLeftNeighbour), y
-    cmp #LIVE_SYMBOL
-    bne @checkLeftNeighbour
-    ldy #0
-    lda (dataPointer), y
-    clc
-    adc #1
-    sta (dataPointer), y
-
-@checkLeftNeighbour:
-    ; check left neighbour
-    ldy #80 ; -41 + 80 = left
-    lda (screenPointerTopLeftNeighbour), y
-    cmp #LIVE_SYMBOL
-    bne @checkBottomNeighbour
-    ldy #0
-    lda (dataPointer), y
-    clc
-    adc #1
-    sta (dataPointer), y
-
-@checkBottomNeighbour:
-    ; check bottom neighbour
-    ldy #121 ; -41 + 121 = bottom
-    lda (screenPointerTopLeftNeighbour), y
-    cmp #LIVE_SYMBOL
-    bne @checkTopRightNeighbour
-    ldy #0
-    lda (dataPointer), y
-    clc
-    adc #1
-    sta (dataPointer), y
-
+    cpx #0
+    beq @checkRightNeighbour ; first line, no need to check top neighbours
 @checkTopRightNeighbour:
     ; check top right neighbour
     ldy #2 ; -41 + 2 = top right
+    lda (screenPointerTopLeftNeighbour), y
+    cmp #LIVE_SYMBOL
+    bne @checkTopNeighbour
+    ldy #0
+    lda (dataPointer), y
+    clc
+    adc #1
+    sta (dataPointer), y
+
+@checkTopNeighbour:
+    ; check top neigbour
+    ldy #1 ; -41 + 1 = top
     lda (screenPointerTopLeftNeighbour), y
     cmp #LIVE_SYMBOL
     bne @checkTopLeftNeighbour
@@ -236,6 +206,44 @@ countNeighbors:
     ldy #0 ; -41 + 0 = top left
     lda (screenPointerTopLeftNeighbour), y
     cmp #LIVE_SYMBOL
+    bne @checkRightNeighbour
+    ldy #0
+    lda (dataPointer), y
+    clc
+    adc #1
+    sta (dataPointer), y
+
+@checkRightNeighbour:
+    ; check right neighbour
+    ldy #42; -41 + 42 = right
+    lda (screenPointerTopLeftNeighbour), y
+    cmp #LIVE_SYMBOL
+    bne @checkLeftNeighbour
+    ldy #0
+    lda (dataPointer), y
+    clc
+    adc #1
+    sta (dataPointer), y
+
+@checkLeftNeighbour:
+    ; check left neighbour
+    ldy #40 ; -41 + 40 = left
+    lda (screenPointerTopLeftNeighbour), y
+    cmp #LIVE_SYMBOL
+    bne @checkBottomNeighbour
+    ldy #0
+    lda (dataPointer), y
+    clc
+    adc #1
+    sta (dataPointer), y
+
+@checkBottomNeighbour:
+    cpx #YSIZE-1
+    beq @end ; last line, no need to check bottom neighbours
+    ; check bottom neighbour
+    ldy #81 ; -41 + 81 = bottom
+    lda (screenPointerTopLeftNeighbour), y
+    cmp #LIVE_SYMBOL
     bne @checkBottomRightNeighbour
     ldy #0
     lda (dataPointer), y
@@ -245,7 +253,7 @@ countNeighbors:
 
 @checkBottomRightNeighbour:
     ; check bottom right neighbour
-    ldy #122 ; -41 + 122 = bottom right
+    ldy #82 ; -41 + 82 = bottom right
     lda (screenPointerTopLeftNeighbour), y
     cmp #LIVE_SYMBOL
     bne @checkBottomLeftNeighbour
@@ -257,7 +265,7 @@ countNeighbors:
 
 @checkBottomLeftNeighbour:
     ; check bottom left neighbour
-    ldy #120 ; -41 + 120 = bottom left
+    ldy #80 ; -41 + 80 = bottom left
     lda (screenPointerTopLeftNeighbour), y
     cmp #LIVE_SYMBOL
     bne @end
