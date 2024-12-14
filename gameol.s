@@ -17,10 +17,6 @@ screenPointerTopLeftNeighbour:
     .res 2
 dataPointer:
     .res 2
-firstRow:
-    .res 1
-lastRow:
-    .res 1
 firstColumn:
     .res 1
 lastColumn:
@@ -95,24 +91,12 @@ cycle:
 @lineloop:
     ldy #0
 
-    lda #0
-    sta firstRow
-    sta lastRow
-    lda #1
-    cpx 0
-    bne @checkLastRow
-    sta firstRow
-@checkLastRow:
-    cpx #YSIZE-1
-    bne @columnloop
-    sta lastRow
-
 @columnloop:
     lda #0
     sta firstColumn
     sta lastColumn
     lda #1
-    cpy 0
+    cpy #0
     bne @checkLastColumn
     sta firstColumn
 @checkLastColumn:
@@ -178,6 +162,9 @@ countNeighbors:
     cpx #0
     beq @checkRightNeighbour ; first line, no need to check top neighbours
 @checkTopRightNeighbour:
+    lda lastColumn
+    cmp #1
+    beq @checkTopNeighbour
     ; check top right neighbour
     ldy #2 ; -41 + 2 = top right
     lda (screenPointerTopLeftNeighbour), y
@@ -202,6 +189,9 @@ countNeighbors:
     sta (dataPointer), y
 
 @checkTopLeftNeighbour:
+    lda firstColumn
+    cmp #1
+    beq @checkRightNeighbour
     ; check top left neighbour
     ldy #0 ; -41 + 0 = top left
     lda (screenPointerTopLeftNeighbour), y
@@ -214,6 +204,9 @@ countNeighbors:
     sta (dataPointer), y
 
 @checkRightNeighbour:
+    lda lastColumn
+    cmp #1
+    beq @checkLeftNeighbour
     ; check right neighbour
     ldy #42; -41 + 42 = right
     lda (screenPointerTopLeftNeighbour), y
@@ -226,6 +219,9 @@ countNeighbors:
     sta (dataPointer), y
 
 @checkLeftNeighbour:
+    lda firstColumn
+    cmp #1
+    beq @checkBottomNeighbour
     ; check left neighbour
     ldy #40 ; -41 + 40 = left
     lda (screenPointerTopLeftNeighbour), y
@@ -252,6 +248,9 @@ countNeighbors:
     sta (dataPointer), y
 
 @checkBottomRightNeighbour:
+    lda lastColumn
+    cmp #1
+    beq @checkBottomLeftNeighbour
     ; check bottom right neighbour
     ldy #82 ; -41 + 82 = bottom right
     lda (screenPointerTopLeftNeighbour), y
@@ -264,6 +263,9 @@ countNeighbors:
     sta (dataPointer), y
 
 @checkBottomLeftNeighbour:
+    lda firstColumn
+    cmp #1
+    beq @end
     ; check bottom left neighbour
     ldy #80 ; -41 + 80 = bottom left
     lda (screenPointerTopLeftNeighbour), y
