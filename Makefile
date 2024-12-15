@@ -5,5 +5,4 @@ run: build
 	x64sc gameol.prg
 
 debug: build
-
 	x64sc -moncommands gameol.lbl -moncommands breakpoints gameol.prg

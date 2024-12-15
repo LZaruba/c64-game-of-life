@@ -43,3 +43,4 @@ The [breakpoints] file contains names of labels that VICE will break on and open
 [https://cc65.github.io/doc/](CC65 Docs)
 [http://www.6502.org/users/obelisk/6502/reference.html](6502 Instruction Set)
 [https://vice-emu.sourceforge.io/vice_11.html](VICE Monitor Manual)
+[https://vice-emu.sourceforge.io/vice_5.html#SEC136](VICE Monitor Settings)

@@ -7,6 +7,7 @@ SCREEN_MEM = $0400
 LIVE_SYMBOL = 1
 DEAD_SYMBOL = $20
 LIVE_BIT = 128 ; 0b10000000
+NEIGHBOUR_MASK = 127 ; 0b01111111 
 
 .zeropage
 roundNumber:
@@ -20,6 +21,8 @@ dataPointer:
 firstColumn:
     .res 1
 lastColumn:
+    .res 1
+cellNeighboursCount:
     .res 1
 
 .segment "CODE"
@@ -146,6 +149,10 @@ countNeighbors:
     tya
     pha
 
+    ; reset cell neighbours count
+    lda #0
+    sta cellNeighboursCount
+
     ldy #0
 
     lda (screenPointer), y
@@ -154,8 +161,7 @@ countNeighbors:
 
     ; mark live bit
     lda #LIVE_BIT
-    ora (dataPointer), y
-    sta (dataPointer), y
+    sta cellNeighboursCount
 
 
 @skipLiveSymbol:
@@ -171,10 +177,10 @@ countNeighbors:
     cmp #LIVE_SYMBOL
     bne @checkTopNeighbour
     ldy #0
-    lda (dataPointer), y
+    lda cellNeighboursCount
     clc
     adc #1
-    sta (dataPointer), y
+    sta cellNeighboursCount
 
 @checkTopNeighbour:
     ; check top neigbour
@@ -183,10 +189,10 @@ countNeighbors:
     cmp #LIVE_SYMBOL
     bne @checkTopLeftNeighbour
     ldy #0
-    lda (dataPointer), y
+    lda cellNeighboursCount
     clc
     adc #1
-    sta (dataPointer), y
+    sta cellNeighboursCount
 
 @checkTopLeftNeighbour:
     lda firstColumn
@@ -198,10 +204,10 @@ countNeighbors:
     cmp #LIVE_SYMBOL
     bne @checkRightNeighbour
     ldy #0
-    lda (dataPointer), y
+    lda cellNeighboursCount
     clc
     adc #1
-    sta (dataPointer), y
+    sta cellNeighboursCount
 
 @checkRightNeighbour:
     lda lastColumn
@@ -213,10 +219,10 @@ countNeighbors:
     cmp #LIVE_SYMBOL
     bne @checkLeftNeighbour
     ldy #0
-    lda (dataPointer), y
+    lda cellNeighboursCount
     clc
     adc #1
-    sta (dataPointer), y
+    sta cellNeighboursCount
 
 @checkLeftNeighbour:
     lda firstColumn
@@ -228,10 +234,10 @@ countNeighbors:
     cmp #LIVE_SYMBOL
     bne @checkBottomNeighbour
     ldy #0
-    lda (dataPointer), y
+    lda cellNeighboursCount
     clc
     adc #1
-    sta (dataPointer), y
+    sta cellNeighboursCount
 
 @checkBottomNeighbour:
     cpx #YSIZE-1
@@ -242,10 +248,10 @@ countNeighbors:
     cmp #LIVE_SYMBOL
     bne @checkBottomRightNeighbour
     ldy #0
-    lda (dataPointer), y
+    lda cellNeighboursCount
     clc
     adc #1
-    sta (dataPointer), y
+    sta cellNeighboursCount
 
 @checkBottomRightNeighbour:
     lda lastColumn
@@ -257,10 +263,10 @@ countNeighbors:
     cmp #LIVE_SYMBOL
     bne @checkBottomLeftNeighbour
     ldy #0
-    lda (dataPointer), y
+    lda cellNeighboursCount
     clc
     adc #1
-    sta (dataPointer), y
+    sta cellNeighboursCount
 
 @checkBottomLeftNeighbour:
     lda firstColumn
@@ -272,15 +278,50 @@ countNeighbors:
     cmp #LIVE_SYMBOL
     bne @end
     ldy #0
-    lda (dataPointer), y
+    lda cellNeighboursCount
     clc
     adc #1
-    sta (dataPointer), y
+    sta cellNeighboursCount
 
 @end:
+    jsr applyRules
     ; restore y
     pla
     tay
+    rts
+
+applyRules:
+    lda cellNeighboursCount
+    and #LIVE_BIT
+    bne @liveCell
+
+    lda cellNeighboursCount
+    and #NEIGHBOUR_MASK
+    cmp #3 ; dead cell with 3 live neighbours
+    beq @makeAlive
+    jmp @makeDead
+
+@liveCell:
+    lda cellNeighboursCount
+    and #NEIGHBOUR_MASK
+    cmp #2 ; live cell with 2 or 3 live neighbours
+    bcc @makeDead
+    beq @makeAlive
+
+    cmp #3
+    beq @makeAlive
+    jmp @makeDead
+
+@makeAlive:
+    lda #1
+    jmp @storeAndReturn
+
+@makeDead:
+    lda #0
+
+@storeAndReturn:
+    ldy #0
+    sta (dataPointer), y
     rts
     
 processNeighbors:
