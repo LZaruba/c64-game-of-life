@@ -7,7 +7,7 @@ SCREEN_MEM = $0400
 LIVE_SYMBOL = 1
 DEAD_SYMBOL = $20
 LIVE_BIT = 128 ; 0b10000000
-NEIGHBOUR_MASK = 127 ; 0b01111111 
+NEIGHBOUR_MASK = 127 ; 0b01111111
 
 .zeropage
 roundNumber:
@@ -24,6 +24,18 @@ lastColumn:
     .res 1
 cellNeighboursCount:
     .res 1
+
+; Print round number variables
+workingNumber:
+    .res 4, 0           ; 4-byte working space for division
+remainder:
+    .byte 0             ; Remainder from division
+buffer:
+    .res 10, 0          ; Buffer to store ASCII digits (up to 10 digits)
+bufferIndex:
+    .byte 0             ; Index for buffer
+roundNumberScreenPointer:
+    .word $07C0         ; Pointer to the start of the last row
 
 .segment "CODE"
     jsr $e544 ; clear screen
@@ -65,6 +77,8 @@ cycle:
     lda roundNumber+3
     adc #0
     sta roundNumber+3
+
+    jsr printRoundNumber
 
     jsr clearData
 
@@ -142,7 +156,79 @@ cycle:
     cpx #YSIZE
     bne @lineloop
 
-    jmp wozmon
+; store the data back to the screen
+    ; reset screen pointer
+    lda #<SCREEN_MEM
+    sta screenPointer
+    lda #>SCREEN_MEM
+    sta screenPointer+1
+
+    ; reset data pointer
+    lda #<data
+    sta dataPointer
+    lda #>data
+    sta dataPointer+1
+
+; X - line counter
+; Y - column counter
+    ldx #0
+@storeToScreenLineLoop:
+    ldy #0
+@storeToScreenColumnLoop:
+    tya
+    pha
+
+    ldy #0
+
+    lda (dataPointer), y
+    cmp #1
+    beq @live
+    lda #DEAD_SYMBOL
+    jmp @store
+
+@live:
+    lda #LIVE_SYMBOL
+
+@store:
+    sta (screenPointer), y
+
+    pla
+    tay
+
+    clc                 ; Clear carry flag
+    lda screenPointer
+    adc #1
+    sta screenPointer
+    lda screenPointer+1
+    adc #0
+    sta screenPointer+1
+
+    clc                 ; Clear carry flag
+    lda dataPointer
+    adc #1
+    sta dataPointer
+    lda dataPointer+1
+    adc #0
+    sta dataPointer+1
+
+    iny
+    cpy #XSIZE
+    bne @storeToScreenColumnLoop
+
+    inx
+    cpx #YSIZE
+    bne @storeToScreenLineLoop
+
+    jsr waitforspace
+    jmp cycle
+
+waitforspace:
+    jsr SCNKEY
+    jsr GETIN
+    cmp #$20 ; space bar
+    bne waitforspace
+    
+    rts
 
 countNeighbors:
     ; stores y on stack
@@ -214,7 +300,7 @@ countNeighbors:
     cmp #1
     beq @checkLeftNeighbour
     ; check right neighbour
-    ldy #42; -41 + 42 = right
+    ldy #41; -41 + 41 = right
     lda (screenPointerTopLeftNeighbour), y
     cmp #LIVE_SYMBOL
     bne @checkLeftNeighbour
@@ -229,7 +315,7 @@ countNeighbors:
     cmp #1
     beq @checkBottomNeighbour
     ; check left neighbour
-    ldy #40 ; -41 + 40 = left
+    ldy #39 ; -41 + 39 = left
     lda (screenPointerTopLeftNeighbour), y
     cmp #LIVE_SYMBOL
     bne @checkBottomNeighbour
@@ -243,7 +329,7 @@ countNeighbors:
     cpx #YSIZE-1
     beq @end ; last line, no need to check bottom neighbours
     ; check bottom neighbour
-    ldy #81 ; -41 + 81 = bottom
+    ldy #82 ; -41 + 82 = bottom
     lda (screenPointerTopLeftNeighbour), y
     cmp #LIVE_SYMBOL
     bne @checkBottomRightNeighbour
@@ -258,7 +344,7 @@ countNeighbors:
     cmp #1
     beq @checkBottomLeftNeighbour
     ; check bottom right neighbour
-    ldy #82 ; -41 + 82 = bottom right
+    ldy #83 ; -41 + 83 = bottom right
     lda (screenPointerTopLeftNeighbour), y
     cmp #LIVE_SYMBOL
     bne @checkBottomLeftNeighbour
@@ -273,7 +359,7 @@ countNeighbors:
     cmp #1
     beq @end
     ; check bottom left neighbour
-    ldy #80 ; -41 + 80 = bottom left
+    ldy #81 ; -41 + 81 = bottom left
     lda (screenPointerTopLeftNeighbour), y
     cmp #LIVE_SYMBOL
     bne @end
@@ -323,39 +409,6 @@ applyRules:
     ldy #0
     sta (dataPointer), y
     rts
-    
-processNeighbors:
-    jsr $e544 ; clear screen
-
-    ldx #$ff
-@evalCycle:
-    
-    lda #LIVE_BIT
-    and data, x
-    beq @dead
-
-    lda #LIVE_SYMBOL
-    jmp @store
-
-@dead:
-    lda #DEAD_SYMBOL
-
-@store:
-    sta SCREEN_MEM, x
-
-    dex
-    bne @evalCycle
-
-    jmp wozmon
-waitforspace:
-    jsr SCNKEY
-    jsr GETIN
-    cmp #$20 ; space bar
-    bne waitforspace
-    
-    jmp cycle
-
-    rts
 
 ; Clears the data array setting it to 0
 ; Modifies A, X
@@ -374,204 +427,117 @@ clearData:
 
     rts
 
+printRoundNumber:
+    lda #0               ; Clear the buffer index
+    sta bufferIndex
+
+    ; Copy the 32-bit number to a working space
+    ldx #3
+copyNumber:
+    lda roundNumber, x
+    sta workingNumber, x
+    dex
+    bpl copyNumber
+
+convertLoop:
+    ; Check if the number is zero
+    lda workingNumber+3
+    ora workingNumber+2
+    ora workingNumber+1
+    ora workingNumber
+    beq printBuffer      ; If number is zero, print the buffer
+
+    ; Divide the 32-bit number by 10
+    jsr divideBy10
+
+    ; Store the remainder (digit) in the buffer
+    lda remainder
+    clc
+    adc #$30             ; Convert to ASCII ('0' = $30)
+    ldx bufferIndex
+    sta buffer, x
+    inx
+    stx bufferIndex
+
+    jmp convertLoop      ; Repeat until the number is zero
+
+printBuffer:
+    ; Screen memory address for the last row: $07C0
+    lda #$C0
+    sta roundNumberScreenPointer
+    lda #$07
+    sta roundNumberScreenPointer+1
+
+    ; Print digits in reverse order
+    ldx bufferIndex
+    beq printZero        ; If no digits were stored, print "0"
+printLoop:
+    dex
+    lda buffer, x
+    ldy #0
+    sta (roundNumberScreenPointer), y
+    inc roundNumberScreenPointer
+    bne skip
+    inc roundNumberScreenPointer+1
+skip:
+    cpx #0
+    bne printLoop
+    rts
+
+printZero:
+    lda #$30             ; ASCII '0'
+    ldy #0
+    sta (roundNumberScreenPointer), y
+    rts
+
+; Routine to divide a 32-bit number by 10
+; Result stored back in workingNumber, remainder in remainder
+divideBy10:
+    lda #0
+    sta remainder        ; Clear the remainder
+
+    ; Perform long division by 10
+    ldx #32              ; 32 bits to process
+divideLoop:
+    ; Shift the 32-bit number left, bringing in a 0 bit
+    clc
+    lda workingNumber
+    rol
+    sta workingNumber
+    lda workingNumber+1
+    rol
+    sta workingNumber+1
+    lda workingNumber+2
+    rol
+    sta workingNumber+2
+    lda workingNumber+3
+    rol
+    sta workingNumber+3
+    
+    ; Shift the remainder left and add the bit that fell off
+    rol remainder
+    
+    ; Check if remainder >= 10
+    lda remainder
+    cmp #10
+    bcc @noSubtract
+    
+    ; Subtract 10 from remainder
+    sec
+    sbc #10
+    sta remainder
+    
+    ; Set the bit in the result
+    lda workingNumber
+    ora #1
+    sta workingNumber
+
+@noSubtract:
+    dex
+    bne divideLoop
+    rts
+
+
 .segment "DATA"
 data:
     .res 1024
-
-wozmon:
-; wozmon.asm
-;
-; Originally from Apple-1 Operation Manual, Steve Wozniak, 1976
-; Revised 2024 May 8 for Commodore 64/VIC/128 by David R. Van Wagner davevw.com
-; * Using C64 KERNAL (instead of MC6520 and KBD/CRT)
-; * extra processing for expected mark parity, software caps lock, and revised newline/carriage return processing
-; * revised to expect terminal line edit mode instead of echo off character processing
-; * revised to acme syntax
-; * different zero page usage
-; * changed l/h to wl/wh because vice didn't like that symbol
-; * reverse toggle instead of spaces only on vic-20 (like HESMON) because too few columns
-
-; zero page usage - tape stuff on vic-20, 64, 128.  Needs to change for PET, TED, Plus/4, 16, etc.
-xaml=$a3
-xamh=$a4
-stl=$a5
-sth=$a6
-wl=$a7
-wh=$a8
-ysav=$a9
-mode=$aa
-
-in=$200 ; same as Commodore uses, should be fine to copy from/to this, will probably use slightly less
-
-;** C64, etc. support added by David R. Van Wagner davevw.com ***************************************
-; Commodore KENRAL
-; CHROUT=$FFD2
-; CHRIN=$FFCF
-;** C64 etc. support added by David R. Van Wagner davevw.com ***************************************
-
-; * = $1400
-START:
-	cld
-	cli
-	jmp escape
-	
-;** C64, etc. support added by David R. Van Wagner davevw.com ***************************************
-KBD_IN:
-	sty $22
-	jsr CHRIN ; note: full screen editor
-	ldy $22
-	rts
-;** C64, etc. support added by David R. Van Wagner davevw.com ***************************************
-
-notcr:
-	cmp #$DF ; underscore or Commodore back arrow (rub out?)
-	beq backspace
-	cmp #$83
-	beq escape
-	iny
-	bpl nextchar
-escape:
-	lda #$DC ; backslash
-	jsr echo
-getline:
-	lda #13
-	jsr echo
-	ldy #1
-backspace:
-	dey
-	bmi getline
-nextchar:
-	jsr KBD_IN
-	ora #$80
-	sta in, y
-	;jsr echo - needed only if terminal echo off, line editing off
-	cmp #$8D
-	bne notcr
-	ldy #$ff
-	lda #$00
-	tax
-setstor:
-	asl
-setmode:
-	sta mode
-blskip:
-	iny
-nextitem:
-	lda in, y
-	cmp #$8D
-	beq getline
-	cmp #$AE ; period
-	bcc blskip
-	beq setmode
-	cmp #$BA ; colon
-	beq setstor
-	cmp #$D2 ; R
-	beq run
-	stx wl
-	stx wh
-	sty ysav
-nexthex:
-	lda in, y
-	eor #$B0
-	cmp #$0A
-	bcc dig
-	adc #$88
-	cmp #$FA
-	bcc nothex
-dig:
-	asl
-	asl
-	asl
-	asl
-	ldx #4
-hexshift:
-	asl
-	rol wl
-	rol wh
-	dex
-	bne hexshift
-	iny
-	bne nexthex
-nothex:
-	cpy ysav
-	beq escape
-	bit mode
-	bvc notstor
-	lda wl
-	sta (stl, x)
-	inc stl
-	bne nextitem
-	inc sth
-tonextitem:
-	jmp nextitem
-run:
-	jmp (xaml)
-notstor:
-	bmi xamnext
-	ldx #2
-setadr:
-	lda wl-1,x
-	sta stl-1,x
-	sta xaml-1,x
-	dex
-	bne setadr
-nxtprnt:
-	bne prdata
-	lda #13
-	jsr echo
-	lda xamh
-	jsr prbyte
-	lda xaml
-	jsr prbyte
-	lda #$BA ; colon
-	jsr echo
-prdata:
-	lda #32
-	jsr echo
-	lda (xaml,x)
-	jsr prbyte
-xamnext:
-	stx mode
-	lda xaml
-	cmp wl
-	lda xamh
-	sbc wh
-	bcs tonextitem
-	inc xaml
-	bne mod8chk
-	inc xamh
-mod8chk:
-	lda xaml
-	and #7
-	bpl nxtprnt ; should always branch
-prbyte:
-	pha
-	lsr
-	lsr
-	lsr
-	lsr
-	jsr prhex
-	pla
-prhex:
-	and #$0F
-	ora #$B0
-	cmp #$BA
-	bcc echo
-	adc #6
-echo:
-;** C64, etc. support added by David R. Van Wagner davevw.com ***************************************
-	and #$7f ; strip mark bit
-	cmp #32	; space?
-	bne notspace
-	lda $FF80 ; Commodore ROM version
-	cmp #$16  ; VIC?
-	bne notvic
-	lda 199
-	eor #18	; invert reverse state
-	sta 199
-	rts
-notvic:
-    lda #32
-notspace:
-	jmp CHROUT
-;** C64, etc. support added by David R. Van Wagner davevw.com ***************************************

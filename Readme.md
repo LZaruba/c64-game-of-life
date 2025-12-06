@@ -36,6 +36,7 @@ The Game of Life, also known as Conway's Game of Life or simply Life, is a cellu
 ## Breakpoints
 
 The [breakpoints] file contains names of labels that VICE will break on and open monitor when running via `make debug`. The file needs to be terminated by an empty line.
+You can change font of the Monitor in Vice settings -> Host -> Monitor -> Font.
 
 ## Resources
 
