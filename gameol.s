@@ -9,6 +9,8 @@ DEAD_SYMBOL = $20
 LIVE_BIT = 128 ; 0b10000000
 NEIGHBOUR_MASK = 127 ; 0b01111111
 ROUND_NUMBER_PONITER = $07C0
+Y_PLAY_SIZE = YSIZE - 1
+X_PLAY_SIZE = XSIZE
 
 .zeropage
 roundNumber:
@@ -38,17 +40,20 @@ cellNeighboursCount:
 
     ; initialize the game
     lda #LIVE_SYMBOL 
-    sta SCREEN_MEM+(40*1)+1
-    sta SCREEN_MEM+(40*1)+2
-    sta SCREEN_MEM+(40*1)+3
-    sta SCREEN_MEM+(40*2)+1
-    sta SCREEN_MEM+(40*2)+2
-    sta SCREEN_MEM+(40*2)+3
-    sta SCREEN_MEM+(40*3)+1
-    sta SCREEN_MEM+(40*3)+2
-    sta SCREEN_MEM+(40*3)+3
+    sta SCREEN_MEM+(40*21)+39
+    sta SCREEN_MEM+(40*21)+38
+    sta SCREEN_MEM+(40*21)+37
+    sta SCREEN_MEM+(40*23)+1
+    sta SCREEN_MEM+(40*23)+2
+    sta SCREEN_MEM+(40*23)+3
+    sta SCREEN_MEM+(40*22)+1
+    sta SCREEN_MEM+(40*22)+2
+    sta SCREEN_MEM+(40*22)+3
 
 cycle:
+    jsr printRoundNumber
+    jsr waitforspace
+
     ; increment round counter
     sed             ; Set Decimal Mode for BCD arithmetic
     clc
@@ -68,8 +73,6 @@ cycle:
     adc #$00        ; BCD value
     sta roundNumber+3
     cld             ; Clear Decimal Mode
-
-    jsr printRoundNumber
 
     jsr clearData
 
@@ -108,7 +111,7 @@ cycle:
     bne @checkLastColumn
     sta firstColumn
 @checkLastColumn:
-    cpy #XSIZE-1
+    cpy #X_PLAY_SIZE-1
     bne @continue
     sta lastColumn
 
@@ -140,11 +143,11 @@ cycle:
     sta dataPointer+1
 
     iny
-    cpy #XSIZE
+    cpy #X_PLAY_SIZE
     bne @columnloop
 
     inx
-    cpx #YSIZE
+    cpx #Y_PLAY_SIZE
     bne @lineloop
 
 ; store the data back to the screen
@@ -203,14 +206,13 @@ cycle:
     sta dataPointer+1
 
     iny
-    cpy #XSIZE
+    cpy #X_PLAY_SIZE
     bne @storeToScreenColumnLoop
 
     inx
-    cpx #YSIZE
+    cpx #Y_PLAY_SIZE
     bne @storeToScreenLineLoop
 
-    jsr waitforspace
     jmp cycle
 
 waitforspace:
@@ -240,6 +242,7 @@ countNeighbors:
     lda #LIVE_BIT
     sta cellNeighboursCount
 
+; for calculations, 40 constant equals one line, but it is counted from left top neighbour, meaning +40 -> left next to me
 
 @skipLiveSymbol:
     cpx #0
@@ -291,7 +294,7 @@ countNeighbors:
     cmp #1
     beq @checkLeftNeighbour
     ; check right neighbour
-    ldy #41; -41 + 41 = right
+    ldy #42; -41 + 42 = right
     lda (screenPointerTopLeftNeighbour), y
     cmp #LIVE_SYMBOL
     bne @checkLeftNeighbour
@@ -306,7 +309,7 @@ countNeighbors:
     cmp #1
     beq @checkBottomNeighbour
     ; check left neighbour
-    ldy #39 ; -41 + 39 = left
+    ldy #40 ; -41 + 40 = left
     lda (screenPointerTopLeftNeighbour), y
     cmp #LIVE_SYMBOL
     bne @checkBottomNeighbour
@@ -317,10 +320,10 @@ countNeighbors:
     sta cellNeighboursCount
 
 @checkBottomNeighbour:
-    cpx #YSIZE-1
+    cpx #Y_PLAY_SIZE-1
     beq @end ; last line, no need to check bottom neighbours
     ; check bottom neighbour
-    ldy #82 ; -41 + 82 = bottom
+    ldy #81 ; -41 + 81 = bottom
     lda (screenPointerTopLeftNeighbour), y
     cmp #LIVE_SYMBOL
     bne @checkBottomRightNeighbour
@@ -335,7 +338,7 @@ countNeighbors:
     cmp #1
     beq @checkBottomLeftNeighbour
     ; check bottom right neighbour
-    ldy #83 ; -41 + 83 = bottom right
+    ldy #82 ; -41 + 82 = bottom right
     lda (screenPointerTopLeftNeighbour), y
     cmp #LIVE_SYMBOL
     bne @checkBottomLeftNeighbour
@@ -350,7 +353,7 @@ countNeighbors:
     cmp #1
     beq @end
     ; check bottom left neighbour
-    ldy #81 ; -41 + 81 = bottom left
+    ldy #80 ; -41 + 80 = bottom left
     lda (screenPointerTopLeftNeighbour), y
     cmp #LIVE_SYMBOL
     bne @end
