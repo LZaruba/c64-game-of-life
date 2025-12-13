@@ -9,6 +9,7 @@ DEAD_SYMBOL = $20
 LIVE_BIT = 128 ; 0b10000000
 NEIGHBOUR_MASK = 127 ; 0b01111111
 ROUND_NUMBER_PONITER = $07C0
+INIT_GAME_LABEL_POINTER = $0400 + 10 * 40 ; line 10 start
 Y_PLAY_SIZE = YSIZE - 1
 X_PLAY_SIZE = XSIZE
 
@@ -31,8 +32,15 @@ speed:
     .res 1
 stringPointer:
     .res 2
+tmp:
+    .res 2
 
 .segment "CODE"
+
+start:
+    jsr initRandom
+    jsr sidInit
+
     jsr $e544 ; clear screen
 
     ; clear round number
@@ -44,17 +52,73 @@ stringPointer:
     sta roundNumber+2
     sta roundNumber+3
 
-    ; initialize the game
-    lda #LIVE_SYMBOL 
-    sta SCREEN_MEM+(40*21)+39
-    sta SCREEN_MEM+(40*21)+38
-    sta SCREEN_MEM+(40*21)+37
-    sta SCREEN_MEM+(40*23)+1
-    sta SCREEN_MEM+(40*23)+2
-    sta SCREEN_MEM+(40*23)+3
-    sta SCREEN_MEM+(40*22)+1
-    sta SCREEN_MEM+(40*22)+2
-    sta SCREEN_MEM+(40*22)+3
+initializeGame:
+
+    ldx #0
+@printLoop:
+    lda initGameLabel, x
+    cmp #0
+    beq @keyLoop
+    sta INIT_GAME_LABEL_POINTER, x
+    inx
+    jmp @printLoop
+
+; read the key
+@keyLoop:
+    jsr SCNKEY
+    jsr GETIN
+    cmp #$31 ; '1' key
+    bcc @keyLoop
+    cmp #$40 ; one key after '9'
+    bcs @keyLoop
+
+
+debug:
+    ; convert ASCII to number 1-9
+    sec
+    sbc #$30
+    pha ; protecting A against clear screen
+
+    jsr $e544 ; clear screen
+
+    pla
+    tay
+
+@fillOuterLoop:
+    ldx #20 ; total number of cells * 1..9
+@fillInnerLoop:
+    txa
+    pha
+    jsr random_line
+    tax
+    lda screenRowLo, x
+    sta tmp
+    lda screenRowHi, x
+    sta tmp+1
+    pla
+    tax
+
+    jsr random_column
+    clc
+    adc tmp
+    sta tmp
+    lda tmp+1
+    adc #0
+    sta tmp+1
+
+    tya
+    pha
+    ldy #0
+    lda #LIVE_SYMBOL
+    sta (tmp), y
+    pla
+    tay
+
+    dex
+    bne @fillInnerLoop
+    dey
+    bne @fillOuterLoop
+
 
 cycle:
     jsr printRoundNumber
@@ -219,6 +283,8 @@ cycle:
     cpx #Y_PLAY_SIZE
     bne @storeToScreenLineLoop
 
+    jsr roundBlip
+
     jmp cycle
 
 ; ========= waitForNextRound =========
@@ -231,12 +297,14 @@ waitForNextRound:
     jsr GETIN
     cmp #$20 ; space bar
     beq @setSpeedZero
-    cmp #$91 ; UP key
+    cmp #$57 ; UP key
     beq @speedUp
-    cmp #$11 ; DOWN key
+    cmp #$53 ; DOWN key
     beq @speedDown
+    cmp #$51 ; Q key
+    bne @delayLoop
 
-    jmp @delayLoop
+    jmp start ; restart the game
 
 @speedUp:
     lda speed
@@ -275,10 +343,17 @@ waitForSpace:
     jsr GETIN
     cmp #$52 ; R key
     beq @setRunMode
+    cmp #$51 ; Q key
+    bne @skipRestart
+    ; restart the game
+    jmp start
+
+@skipRestart:
     cmp #$20 ; space bar
     bne waitForNextRound
 
     rts ; return after space
+    
 
 @setRunMode:
     lda #5
@@ -632,18 +707,145 @@ digitToAscii:
     adc #$30    ; 0 -> '0', 1 -> '1', ..., 9 -> '9'
     rts
 
+initRandom:
+    lda #$ff  ; maximum frequency value
+    sta $d40e ; voice 3 frequency low byte
+    sta $d40f ; voice 3 frequency high byte
+    lda #$80  ; noise waveform, gate bit off
+    sta $d412 ; voice 3 control register
+    rts
+
+; Returns random column index in A (0 to X_PLAY_SIZE-1)
+random_column:
+    lda $D41B ; sid chip noise
+    cmp #X_PLAY_SIZE
+    bcs random_column
+    rts
+
+random_line:
+    lda $D41B ; sid chip noise
+    cmp #Y_PLAY_SIZE
+    bcs random_line
+    rts
+
+sidInit:
+    lda #$0F          ; volume 0..15
+    sta SID_Amp
+    rts
+
+; ------------------------------------------------------------
+; End-of-round blip (self-contained, no lingering)
+; Uses voice 1 only
+; Clobbers: A, X, Y
+; ------------------------------------------------------------
+roundBlip:
+    ; Ensure voice 1 starts silent
+    lda #$00
+    sta SID_Ctl1
+
+    ; Pulse width ~50% ($0800)
+    lda #$00
+    sta SID_PB1Lo
+    lda #$08
+    sta SID_PB1Hi
+
+    ; Envelope: quick hit, NO sustain so it can't hang
+    lda #$02          ; A=0, D=2
+    sta SID_AD1
+    lda #$08          ; S=0, R=8  (key: sustain = 0)
+    sta SID_SUR1
+
+    ; Frequency
+    lda #$C0
+    sta SID_S1Lo
+    lda #$18
+    sta SID_S1Hi
+
+    ; Gate on + pulse waveform
+    lda #%01000001    ; $41 = pulse + gate
+    sta SID_Ctl1
+
+    ; Short audible delay
+    ldx #$20
+@d1:
+    ldy #$FF
+@d2:
+    dey
+    bne @d2
+    dex
+    bne @d1
+
+    ; Gate off
+    lda #%01000000    ; pulse, gate=0
+    sta SID_Ctl1
+
+    ; Small release time to settle
+    ldy #$20
+@r:
+    dey
+    bne @r
+
+    ; Hard kill (guaranteed silence)
+    lda #$00
+    sta SID_Ctl1
+    rts
+
+
 .segment "DATA"
 data:
     .res 1024
 manualLabel:
-    ; .asciiz "M, SPACE FOR STEP, R FOR RUN   "
+    ; .asciiz "MAN SPACE=STEP R=RUN Q=RESTART   "
     ; in screen code
-    .byte $0D,$2C,$20,$13,$10,$01,$03,$05,$20,$06,$0F,$12,$20,$13,$14,$05,$10,$2C,$20,$12,$20,$06,$0F,$12,$20,$12,$15,$0E,$20,$20,$20,$00
+    .byte $0D,$01,$0E,$20
+    .byte $13,$10,$01,$03,$05,$3D,$13,$14,$05,$10,$20
+    .byte $12,$3D,$12,$15,$0E,$20
+    .byte $11,$3D,$12,$05,$13,$14,$01,$12,$14
+    .byte $20,$20,$20,$00
 runLabel1:
-    ; .asciiz "S:"
+    ; .asciiz "AUT"
     ; in screen code
-    .byte $13,$3A,$00
+    .byte $01,$15,$14,$00
 runLabel2:
-    ;.asciiz ", UP/DOWN SPEED, SPACE TO M."
+    ;.asciiz " W/S SPACE=MANUAL Q=RESTART"
     ; in screen code
-    .byte $2C,$20,$15,$10,$2F,$04,$0F,$17,$0E,$20,$13,$10,$05,$05,$04,$2C,$20,$13,$10,$01,$03,$05,$20,$14,$0F,$20,$0D,$2E,$00
+    .byte $20
+    .byte $17,$2F,$13,$20
+    .byte $13,$10,$01,$03,$05,$3D,$0D,$01,$0E,$15,$01,$0C,$20
+    .byte $11,$3D,$12,$05,$13,$14,$01,$12,$14,$00
+
+initGameLabel:
+    ; "PRESS 1-9 TO CHOOSE STARTING DENSITY" centered
+    .byte $20,$20
+    .byte $10,$12,$05,$13,$13
+    .byte $20
+    .byte $31,$2D,$39
+    .byte $20
+    .byte $14,$0F
+    .byte $20
+    .byte $03,$08,$0F,$0F,$13,$05
+    .byte $20
+    .byte $13,$14,$01,$12,$14,$09,$0E,$07
+    .byte $20
+    .byte $04,$05,$0E,$13,$09,$14,$19
+    .byte $00
+    
+; screen addressing for 25 rows of 40 columns
+; each entry is the address of the start of the row in screen memory
+screenRowLo:
+    .byte <($0400 +  0*40),<($0400 +  1*40),<($0400 +  2*40),<($0400 +  3*40)
+    .byte <($0400 +  4*40),<($0400 +  5*40),<($0400 +  6*40),<($0400 +  7*40)
+    .byte <($0400 +  8*40),<($0400 +  9*40),<($0400 + 10*40),<($0400 + 11*40)
+    .byte <($0400 + 12*40),<($0400 + 13*40),<($0400 + 14*40),<($0400 + 15*40)
+    .byte <($0400 + 16*40),<($0400 + 17*40),<($0400 + 18*40),<($0400 + 19*40)
+    .byte <($0400 + 20*40),<($0400 + 21*40),<($0400 + 22*40),<($0400 + 23*40)
+    .byte <($0400 + 24*40),<($0400 + 25*40)
+
+screenRowHi:
+    .byte >($0400 +  0*40),>($0400 +  1*40),>($0400 +  2*40),>($0400 +  3*40)
+    .byte >($0400 +  4*40),>($0400 +  5*40),>($0400 +  6*40),>($0400 +  7*40)
+    .byte >($0400 +  8*40),>($0400 +  9*40),>($0400 + 10*40),>($0400 + 11*40)
+    .byte >($0400 + 12*40),>($0400 + 13*40),>($0400 + 14*40),>($0400 + 15*40)
+    .byte >($0400 + 16*40),>($0400 + 17*40),>($0400 + 18*40),>($0400 + 19*40)
+    .byte >($0400 + 20*40),>($0400 + 21*40),>($0400 + 22*40),>($0400 + 23*40)
+    .byte >($0400 + 24*40),>($0400 + 25*40)
