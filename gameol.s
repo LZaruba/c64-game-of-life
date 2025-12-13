@@ -256,7 +256,6 @@ countNeighbors:
     lda (screenPointerTopLeftNeighbour), y
     cmp #LIVE_SYMBOL
     bne @checkTopNeighbour
-    ldy #0
     lda cellNeighboursCount
     clc
     adc #1
@@ -268,7 +267,6 @@ countNeighbors:
     lda (screenPointerTopLeftNeighbour), y
     cmp #LIVE_SYMBOL
     bne @checkTopLeftNeighbour
-    ldy #0
     lda cellNeighboursCount
     clc
     adc #1
@@ -283,7 +281,6 @@ countNeighbors:
     lda (screenPointerTopLeftNeighbour), y
     cmp #LIVE_SYMBOL
     bne @checkRightNeighbour
-    ldy #0
     lda cellNeighboursCount
     clc
     adc #1
@@ -298,7 +295,6 @@ countNeighbors:
     lda (screenPointerTopLeftNeighbour), y
     cmp #LIVE_SYMBOL
     bne @checkLeftNeighbour
-    ldy #0
     lda cellNeighboursCount
     clc
     adc #1
@@ -313,7 +309,6 @@ countNeighbors:
     lda (screenPointerTopLeftNeighbour), y
     cmp #LIVE_SYMBOL
     bne @checkBottomNeighbour
-    ldy #0
     lda cellNeighboursCount
     clc
     adc #1
@@ -327,7 +322,6 @@ countNeighbors:
     lda (screenPointerTopLeftNeighbour), y
     cmp #LIVE_SYMBOL
     bne @checkBottomRightNeighbour
-    ldy #0
     lda cellNeighboursCount
     clc
     adc #1
@@ -342,7 +336,6 @@ countNeighbors:
     lda (screenPointerTopLeftNeighbour), y
     cmp #LIVE_SYMBOL
     bne @checkBottomLeftNeighbour
-    ldy #0
     lda cellNeighboursCount
     clc
     adc #1
@@ -357,7 +350,6 @@ countNeighbors:
     lda (screenPointerTopLeftNeighbour), y
     cmp #LIVE_SYMBOL
     bne @end
-    ldy #0
     lda cellNeighboursCount
     clc
     adc #1
