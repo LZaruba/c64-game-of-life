@@ -8,6 +8,7 @@ LIVE_SYMBOL = 1
 DEAD_SYMBOL = $20
 LIVE_BIT = 128 ; 0b10000000
 NEIGHBOUR_MASK = 127 ; 0b01111111
+ROUND_NUMBER_PONITER = $07C0
 
 .zeropage
 roundNumber:
@@ -24,20 +25,6 @@ lastColumn:
     .res 1
 cellNeighboursCount:
     .res 1
-
-; Print round number variables
-workingNumber:
-    .res 4, 0           ; 4-byte working space for conversion
-bcdAccumulator:
-    .res 5, 0           ; 5 bytes for 10 BCD digits (max 32-bit = 4,294,967,295)
-bcdTemp:
-    .byte 0             ; Temporary for BCD adjustment (zeropage for speed)
-buffer:
-    .res 10, 0          ; Buffer to store ASCII digits (up to 10 digits)
-bufferIndex:
-    .byte 0             ; Index for buffer
-roundNumberScreenPointer:
-    .word $07C0         ; Pointer to the start of the last row
 
 .segment "CODE"
     jsr $e544 ; clear screen
@@ -63,22 +50,24 @@ roundNumberScreenPointer:
 
 cycle:
     ; increment round counter
+    sed             ; Set Decimal Mode for BCD arithmetic
     clc
     lda roundNumber
-    adc #1
+    adc #$01        ; BCD value
     sta roundNumber
 
     lda roundNumber+1
-    adc #0
+    adc #$00        ; BCD value
     sta roundNumber+1
 
     lda roundNumber+2
-    adc #0
+    adc #$00        ; BCD value
     sta roundNumber+2
 
     lda roundNumber+3
-    adc #0
+    adc #$00        ; BCD value
     sta roundNumber+3
+    cld             ; Clear Decimal Mode
 
     jsr printRoundNumber
 
@@ -429,199 +418,99 @@ clearData:
 
     rts
 
+; Print 8 decimal digits at ROUND_NUMBER_PONITER
+; Each byte holds 2 BCD digits (0-9), so we extract nibbles to get individual digits
 printRoundNumber:
     ; Preserve registers
     txa
     pha
     tya
     pha
-    
-    ; Clear buffer index first (defensive)
-    lda #0
-    sta bufferIndex
-    
-    ; Copy the 32-bit number to a working space
-    ldx #3
-copyNumber:
-    lda roundNumber, x
-    sta workingNumber, x
-    dex
-    bpl copyNumber
-
-    ; Clear BCD accumulator (5 bytes)
-    lda #0
-    sta bcdAccumulator
-    sta bcdAccumulator+1
-    sta bcdAccumulator+2
-    sta bcdAccumulator+3
-    sta bcdAccumulator+4
-
-    ; Double Dabble algorithm: loop 32 times (once per bit)
-    ; Process bits from MSB to LSB
-    ldx #32              ; 32 bits to process
-dabbleLoop:
-    ; Shift BCD accumulator left (5 bytes)
-    clc
-    rol bcdAccumulator
-    rol bcdAccumulator+1
-    rol bcdAccumulator+2
-    rol bcdAccumulator+3
-    rol bcdAccumulator+4
-
-    ; Shift workingNumber left (4 bytes), MSB goes into carry
-    ; Rotate left starting from MSB byte to get MSB into carry
-    clc                  ; Clear carry - we want MSB bit, not a 1
-    lda workingNumber+3
-    rol                  ; Rotate left: bit 7 -> carry, carry (0) -> bit 0
-    sta workingNumber+3
-    lda workingNumber+2
-    rol                  ; Continue rotation chain
-    sta workingNumber+2
-    lda workingNumber+1
-    rol
-    sta workingNumber+1
-    lda workingNumber
-    rol
-    sta workingNumber
-    ; Now carry has the MSB bit from the 32-bit number
-    ; Bring it into BCD accumulator's LSB
-    rol bcdAccumulator    ; Bring carry into BCD LSB
-
-    ; Check each BCD digit (nibble), if >= 5, add 3
-    ; Check bcdAccumulator (byte 0)
-    lda bcdAccumulator
-    jsr adjustBCDByte
-    sta bcdAccumulator
-
-    ; Check bcdAccumulator+1 (byte 1)
-    lda bcdAccumulator+1
-    jsr adjustBCDByte
-    sta bcdAccumulator+1
-
-    ; Check bcdAccumulator+2 (byte 2)
-    lda bcdAccumulator+2
-    jsr adjustBCDByte
-    sta bcdAccumulator+2
-
-    ; Check bcdAccumulator+3 (byte 3)
-    lda bcdAccumulator+3
-    jsr adjustBCDByte
-    sta bcdAccumulator+3
-
-    ; Check bcdAccumulator+4 (byte 4)
-    lda bcdAccumulator+4
-    jsr adjustBCDByte
-    sta bcdAccumulator+4
-
-    dex
-    bne dabbleLoop
-
-    ; Convert BCD digits to ASCII
-    lda #0
-    sta bufferIndex       ; Clear buffer index
-
-    ; Traverse BCD accumulator from MSB to LSB (byte 4 down to 0)
-    ldx #4                ; Start with byte 4 (MSB)
-bcdToAsciiLoop:
-    lda bcdAccumulator, x
-    ; Process upper nibble
-    pha                   ; Save byte
-    lsr                   ; Shift upper nibble to lower
-    lsr
-    lsr
-    lsr
-    jsr convertNibbleToAscii
-    pla                   ; Restore byte
-    ; Process lower nibble
-    and #$0F              ; Mask lower nibble
-    jsr convertNibbleToAscii
-
-    dex
-    bpl bcdToAsciiLoop
-
-    ; If no digits were stored, we need to print "0"
-    lda bufferIndex
-    bne printBuffer
-    lda #$30              ; ASCII '0'
-    sta buffer
-    inc bufferIndex
-
-printBuffer:
-    ; Screen memory address for the last row: $07C0
-    lda #$C0
-    sta roundNumberScreenPointer
-    lda #$07
-    sta roundNumberScreenPointer+1
-
-    ; Print digits in order (they're already stored correctly)
     ldx #0
-printLoop:
-    lda buffer, x
-    ldy #0
-    sta (roundNumberScreenPointer), y
-    inc roundNumberScreenPointer
-    bne skip
-    inc roundNumberScreenPointer+1
-skip:
+
+    ; byte 3 - high nibble (BCD digit)
+    lda roundNumber+3
+    and #$F0
+    lsr
+    lsr
+    lsr
+    lsr
+    jsr digitToAscii
+    sta ROUND_NUMBER_PONITER, x
     inx
-    cpx bufferIndex
-    bne printLoop
-    
-    ; Restore registers
+
+    ; byte 3 - low nibble (BCD digit)
+    lda roundNumber+3
+    and #$0F
+    jsr digitToAscii
+    sta ROUND_NUMBER_PONITER, x
+    inx
+
+    ; byte 2 - high nibble (BCD digit)
+    lda roundNumber+2
+    and #$F0
+    lsr
+    lsr
+    lsr
+    lsr
+    jsr digitToAscii
+    sta ROUND_NUMBER_PONITER, x
+    inx
+
+    ; byte 2 - low nibble (BCD digit)
+    lda roundNumber+2
+    and #$0F
+    jsr digitToAscii
+    sta ROUND_NUMBER_PONITER, x
+    inx
+
+    ; byte 1 - high nibble (BCD digit)
+    lda roundNumber+1
+    and #$F0
+    lsr
+    lsr
+    lsr
+    lsr
+    jsr digitToAscii
+    sta ROUND_NUMBER_PONITER, x
+    inx
+
+    ; byte 1 - low nibble (BCD digit)
+    lda roundNumber+1
+    and #$0F
+    jsr digitToAscii
+    sta ROUND_NUMBER_PONITER, x
+    inx
+
+    ; byte 0 - high nibble (BCD digit)
+    lda roundNumber
+    and #$F0
+    lsr
+    lsr
+    lsr
+    lsr
+    jsr digitToAscii
+    sta ROUND_NUMBER_PONITER, x
+    inx
+
+    ; byte 0 - low nibble (BCD digit)
+    lda roundNumber
+    and #$0F
+    jsr digitToAscii
+    sta ROUND_NUMBER_PONITER, x
+
+    ; restore registers
     pla
     tay
     pla
     tax
     rts
 
-; Helper routine: Adjust BCD byte (check both nibbles, add 3 if >= 5)
-; Input: A = byte with two BCD nibbles
-; Output: A = adjusted byte
-; Modifies: bcdTemp (zeropage temporary)
-adjustBCDByte:
-    sta bcdTemp           ; Save original byte
-    and #$F0              ; Get upper nibble
-    lsr                   ; Shift to lower position for comparison
-    lsr
-    lsr
-    lsr
-    cmp #5
-    bcc @checkLower       ; If upper nibble < 5, check lower nibble
-    ; Add 3 to upper nibble
-    lda bcdTemp           ; Get original byte
+; Convert BCD digit (0-9) to ASCII
+digitToAscii:
+    and #$0F    ; Ensure value is 0-9 (mask to nibble)
     clc
-    adc #$30              ; Add 3 to upper nibble ($30 = 3 << 4)
-    sta bcdTemp           ; Save modified byte
-@checkLower:
-    lda bcdTemp           ; Get byte (original or modified)
-    and #$0F              ; Get lower nibble
-    cmp #5
-    bcc @done             ; If lower nibble < 5, done
-    ; Add 3 to lower nibble
-    lda bcdTemp           ; Get byte
-    clc
-    adc #$03              ; Add 3 to lower nibble
-    rts
-@done:
-    lda bcdTemp           ; Return byte (original or modified)
-    rts
-
-; Helper routine: Convert BCD nibble to ASCII and store in buffer
-; Input: A = BCD nibble (0-9)
-; Modifies: bufferIndex, buffer
-convertNibbleToAscii:
-    ; Skip leading zeros unless we've already started storing digits
-    cmp #0
-    bne @notZero
-    ldy bufferIndex
-    bne @notZero          ; If bufferIndex > 0, we've started, so include this zero
-    rts                   ; Skip leading zero
-@notZero:
-    clc
-    adc #$30              ; Convert to ASCII ('0' = $30)
-    ldy bufferIndex
-    sta buffer, y
-    inc bufferIndex
+    adc #$30    ; 0 -> '0', 1 -> '1', ..., 9 -> '9'
     rts
 
 .segment "DATA"
