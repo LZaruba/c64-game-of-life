@@ -72,8 +72,6 @@ initializeGame:
     cmp #$40 ; one key after '9'
     bcs @keyLoop
 
-
-debug:
     ; convert ASCII to number 1-9
     sec
     sbc #$30
@@ -302,37 +300,45 @@ waitForNextRound:
     cmp #$53 ; DOWN key
     beq @speedDown
     cmp #$51 ; Q key
-    bne @delayLoop
+    bne @preDelayLoop
 
     jmp start ; restart the game
 
 @speedUp:
     lda speed
     cmp #1
-    beq @delayLoop
+    beq @preDelayLoop
     dec speed
-    jmp @delayLoop
+    jmp @preDelayLoop
 
 @speedDown:
     lda speed
     cmp #9
-    beq @delayLoop
+    beq @preDelayLoop
     inc speed
-    jmp @delayLoop
+    jmp @preDelayLoop
 
 @setSpeedZero:
     lda #$00
     sta speed
     
+@preDelayLoop:
+    lda speed
 @delayLoop:
-    sec
+    ldy #$7f
+
+    sec ; go through A down to 0 and skip if 1
     sbc #1
-    ; simple delay loop
-    ldx #$1f
+    cmp #0
+    bne @outerDelayLoop
+    rts
+@outerDelayLoop:
+    ldx #$ff
 @innerDelayLoop:
     dex 
-    cpx #0
     bne @innerDelayLoop
+    dey
+    bne @outerDelayLoop
     cmp #0
     bne @delayLoop
 
@@ -356,7 +362,7 @@ waitForSpace:
     
 
 @setRunMode:
-    lda #5
+    lda #2
     sta speed
     jmp waitForNextRound
 
