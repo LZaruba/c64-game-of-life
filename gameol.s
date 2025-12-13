@@ -4,7 +4,7 @@
 .include "cbm_kernal.inc"
 
 SCREEN_MEM = $0400
-LIVE_SYMBOL = 1
+LIVE_SYMBOL = $51
 DEAD_SYMBOL = $20
 LIVE_BIT = 128 ; 0b10000000
 NEIGHBOUR_MASK = 127 ; 0b01111111
@@ -13,7 +13,7 @@ Y_PLAY_SIZE = YSIZE - 1
 X_PLAY_SIZE = XSIZE
 
 .zeropage
-roundNumber:
+roundNumber: ; roundNumber is in decimal mode
     .res 4
 screenPointer:
     .res 2
@@ -27,12 +27,18 @@ lastColumn:
     .res 1
 cellNeighboursCount:
     .res 1
+speed:
+    .res 1
+stringPointer:
+    .res 2
 
 .segment "CODE"
     jsr $e544 ; clear screen
 
     ; clear round number
     lda #0
+    sta speed
+
     sta roundNumber
     sta roundNumber+1
     sta roundNumber+2
@@ -52,7 +58,7 @@ cellNeighboursCount:
 
 cycle:
     jsr printRoundNumber
-    jsr waitforspace
+    jsr waitForNextRound
 
     ; increment round counter
     sed             ; Set Decimal Mode for BCD arithmetic
@@ -215,13 +221,73 @@ cycle:
 
     jmp cycle
 
-waitforspace:
+; ========= waitForNextRound =========
+waitForNextRound:
+    lda speed
+    cmp #0
+    beq waitForSpace
+
     jsr SCNKEY
     jsr GETIN
     cmp #$20 ; space bar
-    bne waitforspace
+    beq @setSpeedZero
+    cmp #$91 ; UP key
+    beq @speedUp
+    cmp #$11 ; DOWN key
+    beq @speedDown
+
+    jmp @delayLoop
+
+@speedUp:
+    lda speed
+    cmp #1
+    beq @delayLoop
+    dec speed
+    jmp @delayLoop
+
+@speedDown:
+    lda speed
+    cmp #9
+    beq @delayLoop
+    inc speed
+    jmp @delayLoop
+
+@setSpeedZero:
+    lda #$00
+    sta speed
     
-    rts
+@delayLoop:
+    sec
+    sbc #1
+    ; simple delay loop
+    ldx #$1f
+@innerDelayLoop:
+    dex 
+    cpx #0
+    bne @innerDelayLoop
+    cmp #0
+    bne @delayLoop
+
+    rts ; return after delay
+
+waitForSpace:
+    jsr SCNKEY
+    jsr GETIN
+    cmp #$52 ; R key
+    beq @setRunMode
+    cmp #$20 ; space bar
+    bne waitForNextRound
+
+    rts ; return after space
+
+@setRunMode:
+    lda #5
+    sta speed
+    jmp waitForNextRound
+
+    rts ; return after R
+
+; ========= waitForNextRound END =========
 
 countNeighbors:
     ; stores y on stack
@@ -415,6 +481,7 @@ clearData:
 
 ; Print 8 decimal digits at ROUND_NUMBER_PONITER
 ; Each byte holds 2 BCD digits (0-9), so we extract nibbles to get individual digits
+; appends speed to the output
 printRoundNumber:
     ; Preserve registers
     txa
@@ -493,6 +560,44 @@ printRoundNumber:
     and #$0F
     jsr digitToAscii
     sta ROUND_NUMBER_PONITER, x
+    inx
+
+    inx ; skip one byte for space
+
+    lda speed
+    cmp #0
+    beq @printSpeedManual
+
+    lda #<runLabel1
+    sta stringPointer
+    lda #>runLabel1
+    sta stringPointer+1
+    jsr printString
+
+    lda #10 ; complement speed
+    sec
+    sbc speed
+    clc
+    adc #48 ; '0' character code
+    sta ROUND_NUMBER_PONITER, x
+    inx
+
+    lda #<runLabel2
+    sta stringPointer
+    lda #>runLabel2
+    sta stringPointer+1
+    jsr printString
+
+    jmp @finishPrint
+
+@printSpeedManual:
+    lda #<manualLabel
+    sta stringPointer
+    lda #>manualLabel
+    sta stringPointer+1
+    jsr printString
+
+@finishPrint:
 
     ; restore registers
     pla
@@ -500,6 +605,25 @@ printRoundNumber:
     pla
     tax
     rts
+
+; ========= printString =========
+; use stringPointer to point to null-terminated string
+; modifies X, incrementing by the lenghth of the string, starts printing at ROUND_NUMBER_PONITER + X
+printString:
+    ldy #0
+@printLoop:
+    lda (stringPointer), y
+    cmp #0
+    beq @end
+    sta ROUND_NUMBER_PONITER, x
+    inx
+    iny
+    jmp @printLoop
+    
+@end:
+    rts
+
+; ========= printString END =========
 
 ; Convert BCD digit (0-9) to ASCII
 digitToAscii:
@@ -511,3 +635,15 @@ digitToAscii:
 .segment "DATA"
 data:
     .res 1024
+manualLabel:
+    ; .asciiz "M, SPACE FOR STEP, R FOR RUN   "
+    ; in screen code
+    .byte $0D,$2C,$20,$13,$10,$01,$03,$05,$20,$06,$0F,$12,$20,$13,$14,$05,$10,$2C,$20,$12,$20,$06,$0F,$12,$20,$12,$15,$0E,$20,$20,$20,$00
+runLabel1:
+    ; .asciiz "S:"
+    ; in screen code
+    .byte $13,$3A,$00
+runLabel2:
+    ;.asciiz ", UP/DOWN SPEED, SPACE TO M."
+    ; in screen code
+    .byte $2C,$20,$15,$10,$2F,$04,$0F,$17,$0E,$20,$13,$10,$05,$05,$04,$2C,$20,$13,$10,$01,$03,$05,$20,$14,$0F,$20,$0D,$2E,$00
