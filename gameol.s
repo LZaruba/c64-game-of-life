@@ -57,13 +57,24 @@ start:
 initializeGame:
 
     ldx #0
-@printLoop:
-    lda initGameLabel, x
+@printLoop1:
+    lda initGameLabel1, x
+    cmp #0
+    beq @printLoop1Done
+    sta INIT_GAME_LABEL_POINTER - 80, x
+    inx
+    jmp @printLoop1
+
+@printLoop1Done:
+
+    ldx #0
+@printLoop2:
+    lda initGameLabel2, x
     cmp #0
     beq @keyLoop
-    sta INIT_GAME_LABEL_POINTER, x
+    sta INIT_GAME_LABEL_POINTER + 160, x
     inx
-    jmp @printLoop
+    jmp @printLoop2
 
 ; read the key
 @keyLoop:
@@ -950,7 +961,18 @@ runLabel2:
     .byte $13,$10,$01,$03,$05,$3D,$0D,$01,$0E,$15,$01,$0C,$20
     .byte $11,$3D,$12,$05,$13,$14,$01,$12,$14,$00
 
-initGameLabel:
+initGameLabel1:
+    .byte $20,$20,$20,$20,$20,$20,$20,$20,$20
+    .byte $03,$0F,$0E,$17,$01,$19,$27,$13
+    .byte $20
+    .byte $07,$01,$0D,$05
+    .byte $20
+    .byte $0F,$06
+    .byte $20
+    .byte $0C,$09,$06,$05
+    .byte $00
+
+initGameLabel2:
     ; "PRESS 1-9 TO CHOOSE STARTING DENSITY" centered
     .byte $20,$20
     .byte $10,$12,$05,$13,$13
