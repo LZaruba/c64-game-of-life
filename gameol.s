@@ -34,6 +34,8 @@ stringPointer:
     .res 2
 tmp:
     .res 2
+liveCellsCount:
+    .res 2
 
 .segment "CODE"
 
@@ -121,6 +123,10 @@ initializeGame:
 cycle:
     jsr printRoundNumber
     jsr waitForNextRound
+
+    lda #0
+    sta liveCellsCount
+    sta liveCellsCount+1
 
     ; increment round counter
     sed             ; Set Decimal Mode for BCD arithmetic
@@ -281,6 +287,10 @@ cycle:
     cpx #Y_PLAY_SIZE
     bne @storeToScreenLineLoop
 
+    lda liveCellsCount
+    ora liveCellsCount+1
+    beq endGame ; game ends, no more living cells
+
     jsr roundBlip
 
     jmp cycle
@@ -369,6 +379,49 @@ waitForSpace:
     rts ; return after R
 
 ; ========= waitForNextRound END =========
+
+endGame:
+    jsr $e544 ; clear screen
+    ldx #0
+@printLoop1:
+    lda gameOverLabel1, x
+    cmp #0
+    beq @print1Done
+    sta INIT_GAME_LABEL_POINTER - 80, x
+    inx
+    jmp @printLoop1
+
+@print1Done:
+    ldx #0
+@printLoop2:
+    lda gameOverLabel2, x
+    cmp #0
+    beq @print2Done
+    sta INIT_GAME_LABEL_POINTER, x
+    inx
+    jmp @printLoop2
+
+@print2Done:    
+
+    ldx #0
+@printLoop3:
+    lda gameOverLabel3, x
+    cmp #0
+    beq @print3Done
+    sta INIT_GAME_LABEL_POINTER + 160, x
+    inx
+    jmp @printLoop3
+
+@print3Done:    
+    jsr endgame_song
+
+@waitForSpace:
+    jsr SCNKEY
+    jsr GETIN
+    cmp #$20 ; SPACE key
+    bne @waitForSpace
+    ; restart the game
+    jmp start
 
 countNeighbors:
     ; stores y on stack
@@ -532,6 +585,14 @@ applyRules:
     jmp @makeDead
 
 @makeAlive:
+    clc
+    lda liveCellsCount
+    adc #1
+    sta liveCellsCount
+    lda liveCellsCount+1
+    adc #0
+    sta liveCellsCount+1
+
     lda #1
     jmp @storeAndReturn
 
@@ -796,6 +857,75 @@ roundBlip:
     sta SID_Ctl1
     rts
 
+; -----------------------------------------
+; End-game song (very short, blocking)
+; Clobbers: A, X, Y
+; -----------------------------------------
+endgame_song:
+    ; volume (lower nibble). This also clears any filter bits.
+    lda #$0F
+    sta SID_Amp
+
+    ; envelope: snappy, no sustain (prevents hanging)
+    lda #$02          ; A=0, D=2
+    sta SID_AD1
+    lda #$08          ; S=0, R=8
+    sta SID_SUR1
+
+    ldx #0
+@next:
+    ; read duration first (3rd byte) -> terminator if 0
+    ldy endgame_data+2,x
+    beq @done
+
+    ; load freq
+    lda endgame_data,x
+    sta SID_S1Lo
+    lda endgame_data+1,x
+    sta SID_S1Hi
+
+    ; gate on + triangle
+    lda #%00010001    ; $11 = TRI + GATE
+    sta SID_Ctl1
+
+@wait:
+    jsr wait_frame
+    dey
+    bne @wait
+
+    ; gate off (keep waveform bit)
+    lda #%00010000    ; $10 = TRI, gate=0
+    sta SID_Ctl1
+
+    ; small gap (2 frames)
+    ldy #2
+@gap:
+    jsr wait_frame
+    dey
+    bne @gap
+
+    ; next note (advance by 3 bytes)
+    txa
+    clc
+    adc #3
+    tax
+    jmp @next
+
+@done:
+    lda #$00
+    sta SID_Ctl1       ; hard kill
+    rts
+
+
+; Wait ~1 frame using raster (PAL/NTSC OK)
+wait_frame:
+@wait_not0:
+    lda $D012
+    bne @wait_not0          ; wait until low raster becomes 0
+@wait_leave0:
+    lda $D012
+    beq @wait_leave0        ; ensure we don't return twice in same frame
+    rts
 
 .segment "DATA"
 data:
@@ -835,6 +965,35 @@ initGameLabel:
     .byte $20
     .byte $04,$05,$0E,$13,$09,$14,$19
     .byte $00
+
+gameOverLabel1:
+    .byte $20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20
+    .byte $07,$01,$0D,$05
+    .byte $20
+    .byte $0F,$16,$05,$12
+    .byte $00 
+
+gameOverLabel2:
+    .byte $20,$20,$20,$20,$20
+    .byte $19,$0F,$15,$12
+    .byte $20
+    .byte $10,$0F,$10,$15,$0C,$01,$14,$09,$0F,$0E
+    .byte $20
+    .byte $04,$09,$04,$0E,$27,$14
+    .byte $20
+    .byte $13,$15,$12,$16,$09,$16,$05
+    .byte $00
+
+gameOverLabel3:
+    .byte $20,$20,$20,$20,$20,$20,$20,$20
+    .byte $10,$12,$05,$13,$13
+    .byte $20
+    .byte $13,$10,$01,$03,$05
+    .byte $20
+    .byte $14,$0F
+    .byte $20
+    .byte $03,$0F,$0E,$14,$09,$0E,$15,$05
+    .byte $00
     
 ; screen addressing for 25 rows of 40 columns
 ; each entry is the address of the start of the row in screen memory
@@ -855,3 +1014,14 @@ screenRowHi:
     .byte >($0400 + 16*40),>($0400 + 17*40),>($0400 + 18*40),>($0400 + 19*40)
     .byte >($0400 + 20*40),>($0400 + 21*40),>($0400 + 22*40),>($0400 + 23*40)
     .byte >($0400 + 24*40),>($0400 + 25*40)
+
+; -----------------------------------------
+; Data: freqLo, freqHi, durationFrames
+; (Frequencies are SID values; tweak to taste)
+; -----------------------------------------
+endgame_data:
+    .byte $00,$18,10   ; note 1
+    .byte $40,$1C,10   ; note 2
+    .byte $80,$20,10   ; note 3
+    .byte $00,$16,18   ; resolve
+    .byte $00          ; terminator
