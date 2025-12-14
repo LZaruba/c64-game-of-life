@@ -1046,4 +1046,4 @@ endgame_data:
     .byte $40,$1C,10   ; note 2
     .byte $80,$20,10   ; note 3
     .byte $00,$16,18   ; resolve
-    .byte $00          ; terminator
+    .byte $00,$00,0    ; terminator
