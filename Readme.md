@@ -78,6 +78,10 @@ Requires the ca65 out of the [cc65 suite](https://cc65.github.io). Having that i
 The [breakpoints] file contains names of labels that VICE will break on and open monitor when running via `make debug`. The file needs to be terminated by an empty line.
 You can change font of the Monitor in Vice settings -> Host -> Monitor -> Font.
 
+## Testbed
+
+The `testbed.s` file is intended to be used for testing different concepts outside of the main code. Use `make testbed_build`, `make testbed_run`, `make testbed_debug` to work with it.
+
 ## Resources
 
 [C64 Kernal Reference](https://www.pagetable.com/c64ref/kernal/)
@@ -87,3 +91,5 @@ You can change font of the Monitor in Vice settings -> Host -> Monitor -> Font.
 [6502 Instruction Set](http://www.6502.org/users/obelisk/6502/reference.html)
 
 [VICE Monitor Manual](https://vice-emu.sourceforge.io/vice_12.html)
+
+[PETSCII vs Screen Codes](https://www.pagetable.com/c64ref/charset/)
