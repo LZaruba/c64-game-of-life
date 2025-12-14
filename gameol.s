@@ -36,6 +36,8 @@ tmp:
     .res 2
 liveCellsCount:
     .res 2
+sound:
+    .res 1
 
 .segment "CODE"
 
@@ -53,6 +55,9 @@ start:
     sta roundNumber+1
     sta roundNumber+2
     sta roundNumber+3
+
+    lda #1
+    sta sound
 
 initializeGame:
 
@@ -302,94 +307,12 @@ cycle:
     ora liveCellsCount+1
     beq endGame ; game ends, no more living cells
 
+    lda sound
+    beq @skipBlip
     jsr roundBlip
 
+@skipBlip:
     jmp cycle
-
-; ========= waitForNextRound =========
-waitForNextRound:
-    lda speed
-    cmp #0
-    beq waitForSpace
-
-    jsr SCNKEY
-    jsr GETIN
-    cmp #$20 ; space bar
-    beq @setSpeedZero
-    cmp #$57 ; UP key
-    beq @speedUp
-    cmp #$53 ; DOWN key
-    beq @speedDown
-    cmp #$51 ; Q key
-    bne @preDelayLoop
-
-    jmp start ; restart the game
-
-@speedUp:
-    lda speed
-    cmp #1
-    beq @preDelayLoop
-    dec speed
-    jmp @preDelayLoop
-
-@speedDown:
-    lda speed
-    cmp #9
-    beq @preDelayLoop
-    inc speed
-    jmp @preDelayLoop
-
-@setSpeedZero:
-    lda #$00
-    sta speed
-    
-@preDelayLoop:
-    lda speed
-@delayLoop:
-    ldy #$7f
-
-    sec ; go through A down to 0 and skip if 1
-    sbc #1
-    cmp #0
-    bne @outerDelayLoop
-    rts
-@outerDelayLoop:
-    ldx #$ff
-@innerDelayLoop:
-    dex 
-    bne @innerDelayLoop
-    dey
-    bne @outerDelayLoop
-    cmp #0
-    bne @delayLoop
-
-    rts ; return after delay
-
-waitForSpace:
-    jsr SCNKEY
-    jsr GETIN
-    cmp #$52 ; R key
-    beq @setRunMode
-    cmp #$51 ; Q key
-    bne @skipRestart
-    ; restart the game
-    jmp start
-
-@skipRestart:
-    cmp #$20 ; space bar
-    bne waitForNextRound
-
-    rts ; return after space
-    
-
-@setRunMode:
-    lda #2
-    sta speed
-    jmp waitForNextRound
-
-    rts ; return after R
-
-; ========= waitForNextRound END =========
 
 endGame:
     jsr $e544 ; clear screen
@@ -433,6 +356,115 @@ endGame:
     bne @waitForSpace
     ; restart the game
     jmp start
+
+; ========= waitForNextRound =========
+
+waitForSpace:
+    jsr SCNKEY
+    jsr GETIN
+    cmp #$52 ; R key
+    beq @setRunMode
+    cmp #$4d ; M key
+    beq @toggleSound
+    cmp #$51 ; Q key
+    bne @skipRestart
+    ; restart the game
+    jmp start
+
+@toggleSound:
+    lda sound
+    eor #1
+    sta sound
+    jmp waitForSpace
+
+@skipRestart:
+    cmp #$20 ; space bar
+    bne waitForNextRound
+
+    rts ; return after space
+    
+
+@setRunMode:
+    lda #2
+    sta speed
+    jmp waitForNextRound
+
+    rts ; return after R
+
+waitForNextRound:
+    lda speed
+    cmp #0
+    beq waitForSpace
+
+@readKeys:
+    jsr SCNKEY
+    jsr GETIN
+    cmp #$20 ; space bar
+    beq @setSpeedZero
+    cmp #$57 ; UP key
+    beq @speedUp
+    cmp #$53 ; DOWN key
+    beq @speedDown
+    cmp #$4d ; M key
+    beq @toggleSound
+    cmp #$51 ; Q key
+    bne @preDelayLoop
+
+    jmp start ; restart the game
+
+@toggleSound:
+    lda sound
+    eor #1
+    sta sound
+    jmp @readKeys
+
+@speedUp:
+    lda speed
+    cmp #1
+    beq @preDelayLoop
+    dec speed
+    jsr printRoundNumber
+    jmp @speedUpdateDone
+
+@speedDown:
+    lda speed
+    cmp #9
+    beq @preDelayLoop
+    inc speed
+    jsr printRoundNumber
+    jmp @speedUpdateDone
+
+@setSpeedZero:
+    lda #$00
+    sta speed
+
+@speedUpdateDone:
+    jsr printRoundNumber
+    jmp waitForNextRound
+    
+@preDelayLoop:
+    lda speed
+@delayLoop:
+    ldy #$7f
+
+    sec ; go through A down to 0 and skip if 1
+    sbc #1
+    cmp #0
+    bne @outerDelayLoop
+    rts
+@outerDelayLoop:
+    ldx #$ff
+@innerDelayLoop:
+    dex 
+    bne @innerDelayLoop
+    dey
+    bne @outerDelayLoop
+    cmp #0
+    bne @delayLoop
+
+    rts ; return after delay
+
+; ========= waitForNextRound END =========
 
 countNeighbors:
     ; stores y on stack
