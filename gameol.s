@@ -39,6 +39,14 @@ liveCellsCount:
 sound:
     .res 1
 
+; screen editor zero page variables
+columnPointer:
+    .res 1
+rowPointer:
+    .res 1
+cursorPointer:
+    .res 2
+
 .segment "CODE"
 
 start:
@@ -76,15 +84,31 @@ initializeGame:
 @printLoop2:
     lda initGameLabel2, x
     cmp #0
-    beq @keyLoop
+    beq @printLoop2Done
     sta INIT_GAME_LABEL_POINTER + 160, x
     inx
     jmp @printLoop2
+
+@printLoop2Done:
+
+    ldx #0
+@printLoop3:
+    lda initGameLabel3, x
+    cmp #0
+    beq @keyLoop
+    sta INIT_GAME_LABEL_POINTER + 240, x
+    inx
+    jmp @printLoop3
+
+@jumpToScreenEditor:
+    jmp screenEditor_start
 
 ; read the key
 @keyLoop:
     jsr SCNKEY
     jsr GETIN
+    cmp #$45 ; 'E' key for editor
+    beq @jumpToScreenEditor
     cmp #$31 ; '1' key
     bcc @keyLoop
     cmp #$40 ; one key after '9'
@@ -135,6 +159,8 @@ initializeGame:
     dey
     bne @fillOuterLoop
 
+start_game:
+    jsr start_song ; start jingle
 
 cycle:
     jsr printRoundNumber
@@ -747,7 +773,10 @@ printRoundNumber:
     sta ROUND_NUMBER_PONITER, x
     inx
 
-    inx ; skip one byte for space
+    ; space
+    lda #$20
+    sta ROUND_NUMBER_PONITER, x
+    inx
 
     lda speed
     cmp #0
@@ -970,6 +999,203 @@ wait_frame:
     beq @wait_leave0        ; ensure we don't return twice in same frame
     rts
 
+; ===================== SCREEN EDITOR
+
+screenEditor_start:
+    jsr $e544 ; clear screen
+
+    ldx #0
+@printLoop:
+    lda editorStatusBar, x
+    cmp #0
+    beq @printLoopDone
+    sta $0400 + 24*40, x
+    inx
+    jmp @printLoop
+
+@printLoopDone:
+
+    lda #0
+    sta columnPointer
+    sta rowPointer
+    jsr screenEditor_updateCursorPointer
+    jsr screenEditor_highlightCharacter
+
+screenEditor_mainLoop:
+    jsr GETIN
+
+    cmp #$57 ; W key - UP
+    beq @handleUp
+    cmp #$91 ; arrow UP
+    beq @handleUp
+    cmp #$53 ; S key - DOWN
+    beq @handleDown
+    cmp #$11 ; arrow DOWN
+    beq @handleDown    
+    cmp #$41 ; A key - LEFT
+    beq @handleLeft
+    cmp #$9D ; arrow LEFT
+    beq @handleLeft
+    cmp #$44 ; D key - RIGHT
+    beq @handleRight
+    cmp #$1D ; arrow RIGHT
+    beq @handleRight
+    cmp #$20 ; Space key - TOGGLE CELL
+    beq @handleToggle
+    cmp #$0D ; Return key - DONE
+    beq @handleDone
+    cmp #$51 ; Q key - EXIT
+    beq @handleExit
+    jmp screenEditor_mainLoop
+
+@handleExit:
+    jmp start
+
+@handleDone:
+    jsr screenEditor_highlightCharacter
+    jmp start_game ; exit editor to the main loop
+
+@handleUp:
+    lda rowPointer
+    beq screenEditor_mainLoop
+    dec rowPointer
+    jmp @moveCursor
+
+@handleDown:
+    lda rowPointer
+    cmp #Y_PLAY_SIZE - 1
+    beq screenEditor_mainLoop
+    inc rowPointer
+    jmp @moveCursor
+
+@handleLeft:
+    lda columnPointer
+    beq screenEditor_mainLoop
+    dec columnPointer
+    jmp @moveCursor
+
+@handleRight:
+    lda columnPointer
+    cmp #X_PLAY_SIZE - 1
+    beq screenEditor_mainLoop
+    inc columnPointer
+    jmp @moveCursor
+
+@handleToggle:
+    ldy #0
+    lda (cursorPointer), y
+    cmp #$d1
+    beq @clearCell
+    lda #$d1
+    sta (cursorPointer), y
+    jmp screenEditor_mainLoop
+
+@clearCell:
+    lda #$a0
+    sta (cursorPointer), y
+    jmp screenEditor_mainLoop
+
+@moveCursor:
+    jsr screenEditor_highlightCharacter
+    jsr screenEditor_updateCursorPointer
+    jsr screenEditor_highlightCharacter
+    jmp screenEditor_mainLoop
+
+; screenEditor_mainLoop END
+
+; updates cursorPointer based on rowPointer and columnPointer
+; Modifies A, X
+screenEditor_updateCursorPointer:
+    ; Calculate screen address
+    ; get beginning of row
+    lda rowPointer
+    tax
+    lda screenRowLo, x
+    sta cursorPointer
+    lda screenRowHi, x
+    sta cursorPointer + 1
+
+    ; add column offset
+    lda columnPointer
+    clc
+    adc cursorPointer
+    sta cursorPointer
+    lda cursorPointer + 1
+    adc #0
+    sta cursorPointer + 1
+
+    rts
+
+; updateCursorPointer END
+
+; toggles the character with 128 at current cursor position
+; Modifies A, Y
+screenEditor_highlightCharacter:
+    ldy #0
+    lda (cursorPointer), y
+    clc
+    adc #128
+    sta (cursorPointer), y
+
+    rts
+
+; highlightCharacter END
+
+; ===================== SCREEN EDITOR END
+
+; -----------------------------------------
+; Start-game jingle (cheerful, short)
+; Clobbers: A, X, Y
+; -----------------------------------------
+start_song:
+    ; Volume setup
+    lda #$0F
+    sta SID_Amp
+
+    ; Envelope: quick attack/decay, short release
+    lda #$04          ; A=4, D=0
+    sta SID_AD1
+    lda #$08          ; S=0, R=8
+    sta SID_SUR1
+
+    ldx #0
+@next:
+    ldy start_data+2,x
+    beq @done
+
+    lda start_data,x
+    sta SID_S1Lo
+    lda start_data+1,x
+    sta SID_S1Hi
+
+    lda #%00010001    ; TRI + Gate
+    sta SID_Ctl1
+
+@wait:
+    jsr wait_frame
+    dey
+    bne @wait
+
+    lda #%00010000    ; TRI, Gate off
+    sta SID_Ctl1
+
+    ldy #2            ; small gap
+@gap:
+    jsr wait_frame
+    dey
+    bne @gap
+
+    txa
+    clc
+    adc #3
+    tax
+    jmp @next
+
+@done:
+    lda #0
+    sta SID_Ctl1
+    rts
+
 .segment "DATA"
 data:
     .res 1024
@@ -1020,6 +1246,20 @@ initGameLabel2:
     .byte $04,$05,$0E,$13,$09,$14,$19
     .byte $00
 
+initGameLabel3:
+    ; "PRESS E FOR GAME EDITOR" centered
+    .byte $20,$20,$20,$20,$20,$20,$20,$20
+    .byte $10,$12,$05,$13,$13
+    .byte $20
+    .byte $05
+    .byte $20
+    .byte $06,$0F,$12
+    .byte $20
+    .byte $07,$01,$0D,$05
+    .byte $20
+    .byte $05,$04,$09,$14,$0F,$12
+    .byte $00
+
 gameOverLabel1:
     .byte $20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20
     .byte $07,$01,$0D,$05
@@ -1048,6 +1288,12 @@ gameOverLabel3:
     .byte $20
     .byte $03,$0F,$0E,$14,$09,$0E,$15,$05
     .byte $00
+
+editorStatusBar:
+    ; "MOVE=ASWD SELECT=SPACE START=RETURN"
+    .byte $0D,$0F,$16,$05,$3D,$01,$13,$17,$04,$20
+    .byte $13,$05,$0C,$05,$03,$14,$3D,$13,$10,$01,$03,$05,$20
+    .byte $13,$14,$01,$12,$14,$3D,$12,$05,$14,$15,$12,$0E,$00
     
 ; screen addressing for 25 rows of 40 columns
 ; each entry is the address of the start of the row in screen memory
@@ -1078,4 +1324,15 @@ endgame_data:
     .byte $40,$1C,10   ; note 2
     .byte $80,$20,10   ; note 3
     .byte $00,$16,18   ; resolve
+    .byte $00,$00,0    ; terminator
+
+; -----------------------------------------
+; Data: freqLo, freqHi, durationFrames
+; (Ascending C major: C4–E4–G4–C5)
+; -----------------------------------------
+start_data:
+    .byte $00,$10,8    ; C4
+    .byte $A0,$12,8    ; E4
+    .byte $20,$15,8    ; G4
+    .byte $00,$18,12   ; C5
     .byte $00,$00,0    ; terminator
