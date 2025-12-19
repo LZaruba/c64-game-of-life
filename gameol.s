@@ -91,14 +91,25 @@ initializeGame:
 
 @printLoop2Done:
 
-    ldx #0
+ldx #0
 @printLoop3:
     lda initGameLabel3, x
     cmp #0
-    beq @keyLoop
+    beq @printLoop3Done
     sta INIT_GAME_LABEL_POINTER + 240, x
     inx
     jmp @printLoop3
+
+@printLoop3Done:
+
+    ldx #0
+@printLoop4:
+    lda initGameLabel4, x
+    cmp #0
+    beq @keyLoop
+    sta INIT_GAME_LABEL_POINTER + 360, x
+    inx
+    jmp @printLoop4
 
 @jumpToScreenEditor:
     jmp screenEditor_start
@@ -107,6 +118,7 @@ initializeGame:
 @keyLoop:
     jsr SCNKEY
     jsr GETIN
+    jsr handleColorChanges
     cmp #$45 ; 'E' key for editor
     beq @jumpToScreenEditor
     cmp #$31 ; '1' key
@@ -388,6 +400,8 @@ endGame:
 waitForSpace:
     jsr SCNKEY
     jsr GETIN
+
+    jsr handleColorChanges
     cmp #$52 ; R key
     beq @setRunMode
     cmp #$4d ; M key
@@ -425,6 +439,9 @@ waitForNextRound:
 @readKeys:
     jsr SCNKEY
     jsr GETIN
+
+    jsr handleColorChanges
+
     cmp #$20 ; space bar
     beq @setSpeedZero
     cmp #$57 ; UP key
@@ -1046,6 +1063,8 @@ screenEditor_mainLoop:
     beq @handleDone
     cmp #$51 ; Q key - EXIT
     beq @handleExit
+
+    jsr handleColorChanges
     jmp screenEditor_mainLoop
 
 @handleExit:
@@ -1196,6 +1215,66 @@ start_song:
     sta SID_Ctl1
     rts
 
+; handling of color changes based on the key pressed
+; Expects A to have the key code
+; Modifies A, Y
+handleColorChanges:
+    cmp #$85 ; fn 1
+    beq @rotateForeground
+    cmp #$86 ; fn 3
+    beq @rotateBackground
+    cmp #$87 ; fn 5
+    beq @rotateBorder
+    rts
+
+@rotateForeground:
+    lda $d800
+    clc
+    adc #1
+    ora #$f0
+    cmp $d021
+    bne @skipEqualsBackground
+    clc
+    adc #1
+
+@skipEqualsBackground:
+    and #$0f
+    ldy #$00
+
+@colorLoop: 
+    sta $d800, y
+    sta $d900, y
+    sta $da00, y
+    sta $db00, y
+    dey
+    bne @colorLoop
+    rts
+
+@rotateBackground:
+    lda $D021
+    clc
+    adc #1
+    and #$0f
+    cmp $d800
+    bne @skipEqualsForeground
+    clc
+    adc #1
+    and #$0f
+
+@skipEqualsForeground:
+    sta $d021
+    rts
+
+@rotateBorder:
+    lda $d020
+    clc
+    adc #1
+    and #$0f
+    sta $d020
+    rts
+
+; handleColorChanges END
+
 .segment "DATA"
 data:
     .res 1024
@@ -1258,6 +1337,18 @@ initGameLabel3:
     .byte $07,$01,$0D,$05
     .byte $20
     .byte $05,$04,$09,$14,$0F,$12
+    .byte $00
+
+initGameLabel4:
+    ; "F1/F3/F5 TO CHANGE COLORS" centered
+    .byte $20,$20,$20,$20,$20,$20,$20
+    .byte $06,$31,$2F,$06,$33,$2F,$06,$35
+    .byte $20
+    .byte $14,$0F
+    .byte $20
+    .byte $03,$08,$01,$0E,$07,$05
+    .byte $20
+    .byte $03,$0F,$0C,$0F,$12,$13
     .byte $00
 
 gameOverLabel1:
